@@ -2,7 +2,7 @@ package disrupt
 
 import (
 	"math"
-	"runtime"
+
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -36,17 +36,52 @@ func BenchmarkLoadUInt64(b *testing.B) {
 	})
 }
 
-func BenchmarkDisrupt(b *testing.B) {
+func RoundUpPowerOf2(n int64) (power int64) {
+	for power = int64(1); power < n; power *= 2 {
+	}
+	return
+}
+func BenchmarkDisrupt2pow30(b *testing.B) {
+	benchmarkDisrupt(b, int64(math.Pow(2, 30)))
+}
+func BenchmarkDisrupt2pow18(b *testing.B) {
+	benchmarkDisrupt(b, int64(math.Pow(2, 18)))
+}
+
+func BenchmarkDisruptNotConcurrent(b *testing.B) {
+	benchmarkDisrupt(b, 0)
+}
+
+// func BenchmarkDisruptXX(b *testing.B) {
+// 	if b.N != 100000000 {
+// 		return
+// 	}
+// 	benchmarkDisrupt(b, false, 100000000)
+// }
+
+func benchmarkDisrupt(b *testing.B, bufsize int64) {
+
+	notConcurrent := false // run get/put concurrent or serially
+
+	if bufsize == 0 {
+		notConcurrent = true
+		bufsize = RoundUpPowerOf2(int64(b.N))
+
+		// if bufsize<4096{
+		// 	bufsize=4096
+		// }
+	}
+	b.Log("benchmarkDisrupt", "b.n", b.N, "bufsize", bufsize, "notConcurrent", notConcurrent)
 
 	w := sync.WaitGroup{}
 
 	w.Add(1)
 
-	a := NewDisrupt[int64](int(math.Pow(2, 24)))
+	a := NewDisrupt[int64](bufsize)
 
 	go func() {
 
-		runtime.LockOSThread()
+		//runtime.LockOSThread()
 		time.Sleep(time.Millisecond)
 
 		for i := int64(0); i < int64(b.N); i++ {
@@ -58,14 +93,29 @@ func BenchmarkDisrupt(b *testing.B) {
 
 	}()
 
+	if notConcurrent {
+		w.Wait()
+	}
+
 	b.ResetTimer()
 
-	runtime.LockOSThread()
+	//runtime.LockOSThread()
 	for ix := int64(0); ix < int64(b.N); ix++ {
-		val, nextix, ok := a.Get(ix)
-		if int64(val) != ix || nextix != ix+1 || !ok {
-			b.Fatalf("bad vals  ix:%v val:%v nextix:%v ok:%v", ix, val, nextix, ok)
+		val, nextix, isopen := a.Get(ix)
+		if ix != val || ix+1 != nextix || isopen != true {
+			require.Equal(b, ix, val)
+			require.Equal(b, ix+1, nextix)
+			if b.N == 1 {
+				require.Equal(b, false, isopen) // special case, buffer overrun
+			} else {
+				require.Equal(b, true, isopen) //normal case
+			}
+
 		}
+	}
+
+	if !notConcurrent {
+		w.Wait()
 	}
 
 	b.StopTimer()
@@ -76,7 +126,51 @@ func BenchmarkDisrupt(b *testing.B) {
 	require.Equal(b, int64(b.N), ix)
 	require.Equal(b, false, isopen)
 
+}
+
+func TestDisruptNotConcurrent(t *testing.T) {
+	testDisrupt(t, int64(math.Pow(2, 20)), 1e6) // if bufsize too small, overrun and test will fail
+}
+
+func testDisrupt(t *testing.T, bufsize int64, NN int64) {
+
+	w := sync.WaitGroup{}
+
+	w.Add(1)
+
+	a := NewDisrupt[int64](bufsize)
+
+	go func() {
+
+		//runtime.LockOSThread()
+		time.Sleep(time.Millisecond)
+
+		for i := int64(0); i < int64(NN); i++ {
+			a.Put(i)
+		}
+		a.Close()
+
+		w.Done()
+
+	}()
+
+	//runtime.LockOSThread()
+	for ix := int64(0); ix < int64(NN); ix++ {
+		val, nextix, isopen := a.Get(ix)
+		if ix != val || ix+1 != nextix || isopen != true {
+			require.Equal(t, ix, val)
+			require.Equal(t, ix+1, nextix)
+			require.Equal(t, true, isopen)
+		}
+	}
+
 	w.Wait()
+
+	var zero int64
+	v, ix, isopen := a.Get(int64(NN))
+	require.Equal(t, zero, v)
+	require.Equal(t, int64(NN), ix)
+	require.Equal(t, false, isopen)
 
 }
 
@@ -87,52 +181,6 @@ func Benchmark1500Copy(b *testing.B) {
 		C = D
 
 	}
-}
-
-func TestDisrupt(t *testing.T) {
-
-	w := sync.WaitGroup{}
-
-	w.Add(1)
-
-	N := int(1e7)
-
-	a := NewDisrupt[int64](int(math.Pow(2, 12)))
-
-	go func() {
-
-		time.Sleep(time.Microsecond)
-
-		for i := int64(0); i < int64(N); i++ {
-			a.Put(i)
-			runtime.Gosched()
-		}
-
-		a.Close()
-
-		w.Done()
-
-	}()
-
-	for i := int64(0); i < int64(N); i++ {
-		v, k, isopen := a.Get(i)
-		if int64(v) != i || k != i+1 || !isopen {
-			require.Equal(t, i, v)
-			require.Equal(t, i+1, k)
-			require.Equal(t, true, isopen)
-		}
-	}
-
-	v, k, isopen := a.Get(int64(N))
-
-	var zero int64
-
-	require.Equal(t, zero, v)
-	require.Equal(t, int64(N), k)
-	require.Equal(t, false, isopen)
-
-	w.Wait()
-
 }
 
 func TestPutGet1(t *testing.T) {
