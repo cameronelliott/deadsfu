@@ -28,10 +28,10 @@ type Disrupt[T any] struct {
 	_1     [CacheLine]byte
 }
 
-func NewDisrupt[T any](n int) *Disrupt[T] {
+func NewDisrupt[T any](n int64) *Disrupt[T] {
 
-	if n == 0 || (n&(n-1)) != 0 {
-		log.Fatal("require positive power of two")
+	if n <= 0 || (n&(n-1)) != 0 {
+		log.Fatal("require  power of two")
 	}
 
 	buf := make([]T, n)
