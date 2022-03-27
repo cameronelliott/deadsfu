@@ -52,13 +52,6 @@ func BenchmarkDisruptNotConcurrent(b *testing.B) {
 	benchmarkDisrupt(b, 0)
 }
 
-// func BenchmarkDisruptXX(b *testing.B) {
-// 	if b.N != 100000000 {
-// 		return
-// 	}
-// 	benchmarkDisrupt(b, false, 100000000)
-// }
-
 func benchmarkDisrupt(b *testing.B, bufsize int64) {
 
 	notConcurrent := false // run get/put concurrent or serially
