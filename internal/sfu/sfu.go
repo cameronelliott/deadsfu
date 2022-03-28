@@ -2347,7 +2347,7 @@ func getRoomListHandler(rw http.ResponseWriter, r *http.Request) {
 
 }
 
-func Writer(st *disrupt.Disrupt[*XPacket], t *TxTracks) {
+func Writer(room *Room, st *disrupt.Disrupt[*XPacket], t *TxTracks) {
 	dbg.Writer.Println("Writer() started")
 	defer dbg.Writer.Println("Writer() ended")
 
@@ -2357,7 +2357,7 @@ func Writer(st *disrupt.Disrupt[*XPacket], t *TxTracks) {
 		if !ok {
 			return
 		}
-		//dbg.Writer.Println("Writer() got media", p.Typ)
+		//dbg.Writer.Println("Writer() got media", xp.Typ)
 
 		now := nanotime()
 
