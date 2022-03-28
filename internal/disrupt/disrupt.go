@@ -12,20 +12,19 @@ type nolock struct{}
 func (*nolock) Lock()   {}
 func (*nolock) Unlock() {}
 
-const CacheLine = 64
-
+//don't use const for CacheLine size, it hits a linter bug
 // SPMC
 type Disrupt[T any] struct {
 	next   int64
-	_2     [CacheLine]byte
+	_2     [64]byte
 	len64  int64
-	_3     [CacheLine]byte
+	_3     [64]byte
 	mask64 int64
-	_4     [CacheLine]byte
+	_4     [64]byte
 	cond   sync.Cond
-	_5     [CacheLine]byte
+	_5     [64]byte
 	buf    []T
-	_1     [CacheLine]byte
+	_1     [64]byte
 }
 
 func NewDisrupt[T any](n int64) *Disrupt[T] {
