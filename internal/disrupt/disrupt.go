@@ -94,7 +94,7 @@ func (d *Disrupt[T]) Put(v T) (index int64) {
 
 	if RaceEnabled {
 		//RaceEnable()
-		RaceRelease(unsafe.Pointer(d))
+		RaceReleaseMerge(unsafe.Pointer(d))
 	}
 
 	index++
@@ -140,7 +140,7 @@ again:
 
 	if RaceEnabled {
 		//RaceEnable()
-		RaceRelease(unsafe.Pointer(d))
+		RaceReleaseMerge(unsafe.Pointer(d))
 	}
 
 	// did we grab stale data?
