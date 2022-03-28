@@ -54,6 +54,9 @@ func (d *Disrupt[T]) NextIx() int64 {
 func (d *Disrupt[T]) Close() {
 
 	i := atomic.LoadInt64(&d.next)
+	if i < 0 {
+		log.Fatal("cannot close twice")
+	}
 	atomic.StoreInt64(&d.next, -i)
 
 	d.cond.Broadcast()
