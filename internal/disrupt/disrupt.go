@@ -75,12 +75,13 @@ func (d *Disrupt[T]) PutFilledPtr(k int64) {
 	return
 }
 
+func (d *Disrupt[T]) Put(v T) (index int64) {
 
-	i := atomic.LoadInt64(&d.next)
+	index = atomic.LoadInt64(&d.next)
 	//	ix := i % d.len64
-	ix := i & d.mask64
+	ix := index & d.mask64
 
-	if i < 0 {
+	if index < 0 {
 		log.Fatal("closed")
 	}
 
@@ -96,12 +97,13 @@ func (d *Disrupt[T]) PutFilledPtr(k int64) {
 		RaceRelease(unsafe.Pointer(d))
 	}
 
-	i++
-	atomic.StoreInt64(&d.next, i)
+	index++
+	atomic.StoreInt64(&d.next, index)
 
 	d.cond.Broadcast()
 	//d.cond.Signal()   //must uncomment signal below when using this
 
+	return index - 1 // return index of last stored element
 }
 
 func (d *Disrupt[T]) Get(k int64) (value T, next int64, more bool) {
