@@ -152,6 +152,7 @@ var dbg = struct {
 	PeerConn            FastLogger
 	Switching           FastLogger
 	Goroutine           FastLogger
+	Writer              FastLogger
 	ReceiverLostPackets FastLogger
 	Rooms               FastLogger
 	Numgoroutine        FastLogger
