@@ -43,6 +43,14 @@ func NewDisrupt[T any](n int64) *Disrupt[T] {
 	}
 }
 
+func (d *Disrupt[T]) NextIx() int64 {
+	i := atomic.LoadInt64(&d.next)
+	if i < 0 {
+		i = -i
+	}
+	return i
+}
+
 func (d *Disrupt[T]) Close() {
 
 	i := atomic.LoadInt64(&d.next)
