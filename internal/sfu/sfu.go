@@ -2363,11 +2363,17 @@ func Writer(room *Room, st *disrupt.Disrupt[*XPacket], t *TxTracks) {
 			gotkf = true
 
 			t.onKeyframe()
+			room.audTracks.onKeyframe()
+
 		}
+
+		t.onKeyframe()
 
 		//pl(5,len(t.live),len(t.replay))
 
-		// forward to all 'live' tracks
+		// we don't call a method here, so
+		// we can use the rtpPktCopy, which someday won't escape, maybe
+		t.mu.Lock()
 		for k := range t.live {
 
 			rtpPktCopy = xp.Pkt
@@ -2377,10 +2383,8 @@ func Writer(room *Room, st *disrupt.Disrupt[*XPacket], t *TxTracks) {
 			// this is currently at 20ns/loop
 			k.splicer.SpliceWriteRTP(k.track, &rtpPktCopy, now, int64(k.clockrate))
 		}
-
 		t.mu.Unlock()
 
-		//	pl("reading")
 	}
 }
 
