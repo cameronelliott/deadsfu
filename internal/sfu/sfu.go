@@ -2402,7 +2402,18 @@ func NewTxTracks() *TxTracks {
 	return a
 }
 
-func (t *TxTracks) Add(p *TxTrack) {
+func (t *TxTracks) onKeyframe() {
+	t.mu.Lock()
+
+	for txt := range t.replay {
+		delete(t.replay, txt)
+		t.live[txt] = struct{}{}
+	}
+
+	t.mu.Unlock()
+}
+
+func (t *TxTracks) add(p *TxTrack) {
 	t.mu.Lock()
 	t.replay[p] = struct{}{}
 	t.mu.Unlock()
