@@ -112,25 +112,27 @@ func benchmarkBrokerWithWriter(b *testing.B, numwrites int) {
 
 	for i := 0; i < numwrites; i++ {
 		vidwriter := &DummyWriter{}
-		pair := TxTrackPair{
-			aud: TxTrack{
-				track:     vidwriter,
-				splicer:   RtpSplicer{},
-				clockrate: 48000,
-			},
-			vid: TxTrack{
-				track:     vidwriter,
-				splicer:   RtpSplicer{},
-				clockrate: 90000,
-			},
+
+		aud := TxTrack{
+			track:     vidwriter,
+			splicer:   RtpSplicer{},
+			clockrate: 48000,
 		}
-		trks.Add(&pair)
+		vid := TxTrack{
+			track:     vidwriter,
+			splicer:   RtpSplicer{},
+			clockrate: 90000,
+		}
+
+		trks.Add(&aud)
+		trks.Add(&vid)
+
 	}
 
 	a := NewXBroker()
 	go a.Start()
 	ch := a.Subscribe()
-	go Writer(ch, trks, "test")
+	//go Writer(ch, trks, "test")
 
 	b.ReportAllocs()
 	b.ResetTimer()
