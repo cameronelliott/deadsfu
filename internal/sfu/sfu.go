@@ -2348,6 +2348,8 @@ func Writer(room *Room, st *disrupt.Disrupt[*XPacket], t *TxTracks) {
 
 	var rtpPktCopy rtp.Packet
 
+	gotkf := false
+
 	for xp, i, ok := st.Get(0); ok; xp, i, ok = st.Get(i) {
 		if !ok {
 			return
@@ -2356,15 +2358,11 @@ func Writer(room *Room, st *disrupt.Disrupt[*XPacket], t *TxTracks) {
 
 		now := nanotime()
 
-		t.mu.Lock()
-
 		// if keyframe, move all from pending to live
-		if xp.Typ == Video && xp.Keyframe {
+		if !gotkf && xp.Typ == Video && xp.Keyframe {
+			gotkf = true
 
-			for pair := range t.replay {
-				delete(t.replay, pair)
-				t.live[pair] = struct{}{}
-			}
+			t.onKeyframe()
 		}
 
 		//pl(5,len(t.live),len(t.replay))
