@@ -63,7 +63,18 @@ func (d *Disrupt[T]) Close() {
 	//d.cond.Signal()   //must uncomment signal below when using this
 }
 
-func (d *Disrupt[T]) Put(v T) {
+// not yet: for non-pointer, raw struct usage
+func (d *Disrupt[T]) GetEmptyPtr(k int64) *T {
+	log.Fatal("not yet")
+	return nil
+}
+
+// not yet: for non-pointer, raw struct usage
+func (d *Disrupt[T]) PutFilledPtr(k int64) {
+	log.Fatal("not yet")
+	return
+}
+
 
 	i := atomic.LoadInt64(&d.next)
 	//	ix := i % d.len64
