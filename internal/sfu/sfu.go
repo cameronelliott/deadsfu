@@ -961,11 +961,11 @@ func subHandlerGr(offersdp string, roomname string, subGrCh <-chan string) (*web
 			//XXX move to method
 			room := rooms.GetRoom(roomname)
 
-			room.audTracks.Add(aud)
-			room.vidTracks.Add(vid)
+			room.audTracks.add(aud)
+			room.vidTracks.add(vid)
 
-			go Replay(room.video, room.vidTracks, vid)
-			go Replay(room.audio, room.audTracks, aud)
+			// go Replay(room.video, room.vidTracks, vid)
+			// go Replay(room.audio, room.audTracks, aud)
 
 		case webrtc.PeerConnectionStateClosed:
 			fallthrough
@@ -1476,11 +1476,9 @@ func OnTrack2(
 
 func inboundTrackReader(rxTrack *webrtc.TrackRemote, clockrate uint32, typ XPacketType, room *Room, st *disrupt.Disrupt[*XPacket], trk *TxTracks) {
 
-	//room gets passed into here, and 'kept alive' for the duration of this func/GR so
-	//the finalizer won't run as long as this is still going
-	defer runtime.KeepAlive(room) // does this work the way we want?? hope so.
+	defer runtime.KeepAlive(room) // backup keepalive
 
-	go Writer(st, trk)
+	go Writer(room, st, trk)
 	defer st.Close()
 
 	for {
@@ -2188,7 +2186,7 @@ func SubscriberGr(subGrCh <-chan string, txt *TxTrack, roomname string) {
 
 	for {
 		room.SubscriberIncRef()
-		room.audTracks.Add(txt)
+		room.audTracks.add(txt)
 
 		xpCh := room.xBroker.SubscribeReplay()
 		brkr := room.xBroker   //fix race
@@ -2202,7 +2200,7 @@ func SubscriberGr(subGrCh <-chan string, txt *TxTrack, roomname string) {
 
 		room.SubscriberDecRef()
 		room.xBroker.RemoveClose(xpCh) // 2 calls is okay: here & after switch request
-		room.audTracks.Remove(txt)     // remove from current room
+		room.audTracks.remove(txt)     // remove from current room
 
 		if !open {
 			return
@@ -2419,7 +2417,7 @@ func (t *TxTracks) add(p *TxTrack) {
 	t.mu.Unlock()
 }
 
-func (t *TxTracks) Remove(p *TxTrack) {
+func (t *TxTracks) remove(p *TxTrack) {
 	dbg.Rooms.Println("TxTracks.Remove(pair)")
 	t.mu.Lock()
 
@@ -2428,7 +2426,7 @@ func (t *TxTracks) Remove(p *TxTrack) {
 	t.mu.Unlock()
 }
 
-func (t *TxTracks) IsEmpty() bool {
+func (t *TxTracks) isEmpty() bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 

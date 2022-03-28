@@ -124,8 +124,8 @@ func benchmarkBrokerWithWriter(b *testing.B, numwrites int) {
 			clockrate: 90000,
 		}
 
-		trks.Add(&aud)
-		trks.Add(&vid)
+		trks.add(&aud)
+		trks.add(&vid)
 
 	}
 
