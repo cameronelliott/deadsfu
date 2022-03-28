@@ -121,7 +121,7 @@ func benchmarkDisrupt(b *testing.B, bufsize int64) {
 
 }
 
-func TestDisruptNotConcurrent(t *testing.T) {
+func TestDisrupt(t *testing.T) {
 	testDisrupt(t, int64(math.Pow(2, 20)), 1e6) // if bufsize too small, overrun and test will fail
 }
 
