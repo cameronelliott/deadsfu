@@ -152,7 +152,8 @@ again:
 	}
 	if k <= (j - d.len64) { // we read possibly overwritten data
 
-		k++ //discard bad data
+		k++                              //discard bad data
+		log.Println("disrupt data loss") // XXX better way to track someday
 		goto again
 
 		// val = zeroval
