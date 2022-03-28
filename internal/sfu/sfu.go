@@ -94,11 +94,6 @@ type TxTrack struct {
 
 // There is no mutex for this, the parent must be mutexed!
 
-type TxTrackPair struct {
-	aud TxTrack
-	vid TxTrack
-}
-
 type myFtlServer struct {
 	badrtp    int
 	badssrc   int
