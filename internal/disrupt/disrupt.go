@@ -106,6 +106,18 @@ func (d *Disrupt[T]) Put(v T) (index int64) {
 	return index - 1 // return index of last stored element
 }
 
+func (d *Disrupt[T]) GetLast() (value T, next int64, more bool) {
+
+	i := atomic.LoadInt64(&d.next)
+	if i < 0 {
+		i = -i
+	}
+	i--
+	i = i & d.mask64
+	return d.Get(i)
+
+}
+
 func (d *Disrupt[T]) Get(k int64) (value T, next int64, more bool) {
 
 	//ix := k % d.len64
