@@ -43,11 +43,16 @@ func NewDisrupt[T any](n int64) *Disrupt[T] {
 	}
 }
 
-func (d *Disrupt[T]) NextIx() int64 {
+func (d *Disrupt[T]) LastIx() int64 {
 	i := atomic.LoadInt64(&d.next)
 	if i < 0 {
 		i = -i
 	}
+	if i > 0 {
+		i--
+	}
+	i = i & d.mask64
+
 	return i
 }
 
@@ -108,12 +113,8 @@ func (d *Disrupt[T]) Put(v T) (index int64) {
 
 func (d *Disrupt[T]) GetLast() (value T, next int64, more bool) {
 
-	i := atomic.LoadInt64(&d.next)
-	if i < 0 {
-		i = -i
-	}
-	i--
-	i = i & d.mask64
+	i:= d.LastIx()
+	
 	return d.Get(i)
 
 }

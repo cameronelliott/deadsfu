@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	crand "crypto/rand"
+	"sync/atomic"
 
 	"encoding/json"
 	"math"
@@ -55,8 +56,6 @@ import (
 	"github.com/x186k/deadsfu/internal/disrupt"
 	"github.com/x186k/deadsfu/internal/newpeerconn"
 
-	"github.com/google/uuid"
-
 	"unsafe"
 )
 
@@ -103,24 +102,35 @@ type myFtlServer struct {
 	rxMediaCh chan rtp.Packet
 }
 
+type rxTxType struct {
+	rx     *disrupt.Disrupt[*XPacket] // does not HAVE to be a pointer, I think
+	tx     *TxTracks
+	lastKf int64
+}
+
+func newRxTxType() *rxTxType {
+
+	return &rxTxType{
+		rx:     disrupt.NewDisrupt[*XPacket](16384),
+		tx:     NewTxTracks(),
+		lastKf: 0,
+	}
+
+}
+
 //the link between publishers and subscribers
 // mostly the channel on which a /pub puts media for a /sub to send out
 // this struct, is currently IMMUTABLE, ideally, it stays that way
 type Room struct {
-	mu              sync.Mutex
-	xBroker         *XBroker
-	audTracks       *TxTracks
-	vidTracks       *TxTracks
-	writerChan      chan *XPacket
-	doneClose       chan struct{}
-	subCount        int
-	roomname        string
-	ingressBusy     bool
-	weakRef         *roomIndirect              // gets nulled on finalizer
-	audio           *disrupt.Disrupt[*XPacket] // does not HAVE to be a pointer, I think
-	video           *disrupt.Disrupt[*XPacket] // does not HAVE to be a pointer, I think
-	keyframeIx      int64
-	audioKeyframeIx int64
+	mu          sync.Mutex
+	writerChan  chan *XPacket
+	doneClose   chan struct{}
+	subCount    int
+	roomname    string
+	ingressBusy bool
+	weakRef     *roomIndirect // gets nulled on finalizer
+	aud         *rxTxType
+	vid         *rxTxType
 }
 
 type roomIndirect struct {
@@ -231,8 +241,7 @@ func (r *RoomMap) GetList() []string {
 
 var rooms = NewRoomMap()
 
-var subMap = make(map[uuid.UUID]chan string)
-var subMapMutex sync.Mutex
+var subsMap = newSubscriberMap()
 
 var dialUpstreamUrl *url.URL
 
@@ -499,29 +508,26 @@ func handleSDPWarning(next http.Handler) http.Handler {
 
 func switchHandler(rw http.ResponseWriter, r *http.Request) {
 
-	a := getSubuuidFromRequest(r)
-	if a == nil {
+	subid := getSubscriberIdFromRequest(r)
+	if subid == "" {
 		dbg.Switching.Println("/switchRoom: invalid uuid passed into request")
 		return
 	}
 
-	subMapMutex.Lock()
-	subGrCh, ok := subMap[*a]
-	subMapMutex.Unlock()
+	sub, ok := subsMap.getSub(subid)
 
 	if !ok { //that subscriber was not found
-		dbg.Switching.Println(unsafe.Pointer(&subGrCh), "/switchRoom: subscriber not found for uuid:", a.String())
+		dbg.Switching.Println("/switchRoom: subscriber not found for subid:", subid)
 		return
 	}
 
 	name := r.URL.Query().Get("room")
+	name = fixRoomName(name)
 
-	select {
-	case subGrCh <- name:
-		dbg.Switching.Println(unsafe.Pointer(&subGrCh), "/switchRoom: sent request to switch to room:", name)
-	default:
-		dbg.Switching.Println(unsafe.Pointer(&subGrCh), "/switchRoom: NOT! sent request to switch to room:", name)
-	}
+	room := rooms.GetRoom(name)
+
+	sub.switchRoom(room)
+
 }
 
 func setupMux() (*http.ServeMux, error) {
@@ -823,18 +829,14 @@ func NewRoom(roomname string) *Room {
 	writerInCh := xbroker.Subscribe()
 	room := &Room{
 		mu:          sync.Mutex{},
-		xBroker:     xbroker,
-		audTracks:   NewTxTracks(),
-		vidTracks:   NewTxTracks(),
 		writerChan:  writerInCh,
 		doneClose:   make(chan struct{}),
 		subCount:    0,
 		roomname:    roomname,
 		ingressBusy: false,
 		weakRef:     &roomIndirect{},
-		audio:       disrupt.NewDisrupt[*XPacket](16384),
-		video:       disrupt.NewDisrupt[*XPacket](16384),
-		keyframeIx:  0,
+		aud:         newRxTxType(),
+		vid:         newRxTxType(),
 	}
 	room.weakRef = &roomIndirect{room}
 	runtime.SetFinalizer(room, roomFinalizer)
@@ -957,15 +959,15 @@ func subHandlerGr(offersdp string, roomname string, subGrCh <-chan string) (*web
 		dbg.Sub.Println("/"+roomname, "ConnectionState", cs.String())
 		switch cs {
 		case webrtc.PeerConnectionStateConnected:
-			//go SubscriberGr(subGrCh, txset, roomname)
-			//XXX move to method
 			room := rooms.GetRoom(roomname)
+			//go SubscriberGr(subGrCh, room)
+			//XXX move to method
 
-			room.audTracks.add(aud)
-			room.vidTracks.add(vid)
+			room.aud.tx.add(aud)
+			room.vid.tx.add(vid)
 
-			// go Replay(room.video, room.vidTracks, vid)
-			// go Replay(room.audio, room.audTracks, aud)
+			go Replay(true, room.vid, vid)
+			go Replay(false, room.aud, aud)
 
 		case webrtc.PeerConnectionStateClosed:
 			fallthrough
@@ -1012,14 +1014,17 @@ func subHandler(rw http.ResponseWriter, r *http.Request) {
 	}
 
 	roomname := r.URL.Query().Get("room") // "" is permitted, most common room name!
-	subuuid := getSubuuidFromRequest(r)
+	subuuid := getSubscriberIdFromRequest(r)
 	subGrCh := make(chan string, 1)
 
-	if subuuid != nil {
+	if subuuid != "" {
 		//pl("Creating submap entry for ", subuuid.String())
-		subMapMutex.Lock()
-		subMap[*subuuid] = subGrCh
-		subMapMutex.Unlock()
+
+		room := rooms.GetRoom(roomname)
+
+		sub := &subscriber{room: room}
+		subsMap.add(subuuid, sub)
+
 	}
 
 	ans, err := subHandlerGr(string(offersdpbytes), roomname, subGrCh)
@@ -1039,22 +1044,15 @@ func subHandler(rw http.ResponseWriter, r *http.Request) {
 
 }
 
-func getSubuuidFromRequest(r *http.Request) (subuuid *uuid.UUID) {
+func getSubscriberIdFromRequest(r *http.Request) string {
 
 	if x := r.URL.Query().Get("subuuid"); x != "" {
-		if x, err := uuid.Parse(x); err == nil {
-			subuuid = &x
-		}
+		return x
 	}
 	if x := r.Header.Get("X-deadsfu-subuuid"); x != "" {
-		if x, err := uuid.Parse(x); err == nil {
-			if subuuid != nil {
-				log.Println("/whap request provided both subuuid param and header. Ignoring param")
-			}
-			subuuid = &x
-		}
+		return x
 	}
-	return subuuid
+	return ""
 }
 
 func logTransceivers(tag string, pc *webrtc.PeerConnection) {
@@ -1411,7 +1409,7 @@ func OnTrack2(
 	if track.Kind() == webrtc.RTPCodecTypeAudio {
 		dbg.Main.Println("OnTrack audio", mimetype)
 
-		inboundTrackReader(track, track.Codec().ClockRate, Audio, link, link.audio, link.audTracks)
+		inboundTrackReader(false, track, track.Codec().ClockRate, Audio, link.aud, nil, link)
 		//here on error
 		dbg.Main.Printf("audio reader %p exited", track)
 		return
@@ -1460,7 +1458,7 @@ func OnTrack2(
 	//this is the main rtp read/write loop
 	// one per track (OnTrack above)
 
-	inboundTrackReader(track, track.Codec().ClockRate, Video, link, link.video, link.vidTracks)
+	inboundTrackReader(true, track, track.Codec().ClockRate, Video, link.vid, link.aud.tx, link)
 	//here on error
 	dbg.Main.Printf("video reader %p exited", track)
 
@@ -1474,12 +1472,14 @@ func OnTrack2(
 // 	},
 // }
 
-func inboundTrackReader(rxTrack *webrtc.TrackRemote, clockrate uint32, typ XPacketType, room *Room, st *disrupt.Disrupt[*XPacket], trk *TxTracks) {
+func inboundTrackReader(isvid bool, rxTrack *webrtc.TrackRemote, clockrate uint32, typ XPacketType, rxtx *rxTxType, audTx *TxTracks, room *Room) {
 
 	defer runtime.KeepAlive(room) // backup keepalive
 
-	go Writer(room, st, trk)
-	defer st.Close()
+	go Writer(isvid, rxtx, audTx)
+	defer rxtx.rx.Close()
+
+	rx := rxtx.rx
 
 	for {
 		xp := new(XPacket)
@@ -1505,11 +1505,16 @@ func inboundTrackReader(rxTrack *webrtc.TrackRemote, clockrate uint32, typ XPack
 		xp.Arrival = nanotime()
 		xp.Keyframe = isvid && isH264Keyframe(r.Payload)
 
-		ix := st.Put(xp)
+		ix := rx.Put(xp)
 
 		if xp.Keyframe {
-			room.keyframeIx = ix
-			room.audioKeyframeIx = room.audio.NextIx()
+
+			a, ixnext, xxok := rx.Get(ix)
+			dbg.Switching.Println("inbound KF, reget: iskf,ix,ixnext,ok", isH264Keyframe(a.Pkt.Payload), ix, ixnext, xxok)
+
+			atomic.StoreInt64(&room.vid.lastKf, ix)
+			atomic.StoreInt64(&room.aud.lastKf, room.aud.rx.LastIx())
+
 		}
 
 	}
@@ -1774,6 +1779,88 @@ func (s *RtpSplicer) SpliceWriteRTP(trk WriteRtpIntf, p *rtp.Packet, unixnano in
 	if err != nil {
 		panic(err)
 	}
+}
+
+type subsMapType struct {
+	mu     sync.Mutex
+	submap map[string]*subscriber
+}
+
+type subscriber struct {
+	mu   sync.Mutex
+	room *Room
+}
+
+func (s *subscriber) switchRoom(r *Room) {
+
+}
+
+func SubscriberGr(subGrCh <-chan string, txt *TxTrack, roomname string) {
+	dbg.Goroutine.Println(unsafe.Pointer(&subGrCh), "subGr() started")
+	defer dbg.Goroutine.Println(unsafe.Pointer(&subGrCh), "subGr() ended")
+
+	room := rooms.GetRoom(roomname)
+
+	for {
+		room.SubscriberIncRef()
+		room.aud.tx.add(txt)
+
+		//xpCh := room.xBroker.SubscribeReplay()
+		//brkr := room.xBroker   //fix race
+		//trks := room.aud.tx //fix race
+		go func() { // start Replay()
+			//Replay(0, nil, trks, txt)
+			//brkr.RemoveClose(xpCh) // 2 calls is okay: here & after switch request
+		}()
+
+		req, open := <-subGrCh
+
+		room.SubscriberDecRef()
+		//room.xBroker.RemoveClose(xpCh) // 2 calls is okay: here & after switch request
+		room.aud.tx.remove(txt) // remove from current room
+
+		if !open {
+			return
+		}
+
+		// copy and change the address of txt. cause Replay() return. see note after function
+		tmptxt := *txt
+		txt = &tmptxt
+
+		room = rooms.GetRoom(req)
+		dbg.Rooms.Println(unsafe.Pointer(&subGrCh), "SubscriberGr() switched to different room:", req)
+
+	}
+
+}
+
+func newSubscriberMap() *subsMapType {
+
+	return &subsMapType{
+		mu:     sync.Mutex{},
+		submap: map[string]*subscriber{},
+	}
+
+}
+
+func (m *subsMapType) getSub(subid string) (*subscriber, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	sub, ok := m.submap[subid]
+	return sub, ok
+}
+
+func (m *subsMapType) add(subid string, s *subscriber) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if _, ok := m.submap[subid]; ok {
+		return false
+	}
+	m.submap[subid] = s
+
+	return true
 }
 
 // isH264Keyframe detects when an RFC6184 payload contains an H264 SPS (8)
@@ -2119,16 +2206,21 @@ type XPacket struct {
 
 // Replay will replay a GOP to a subscribers tracks
 
-func Replay(st *disrupt.Disrupt[*XPacket], t *TxTracks, txt *TxTrack) {
-	dbg.Goroutine.Println(unsafe.Pointer(t), "Replay() started")
-	defer dbg.Goroutine.Println(unsafe.Pointer(t), "Replay() ended")
+func Replay(isvid bool, rxtx *rxTxType, txt *TxTrack) {
+
+	lastKf := atomic.LoadInt64(&rxtx.lastKf)
+
+	dbg.Switching.Printf("Replay() started  lastkf = %v", lastKf)
+	defer dbg.Switching.Printf("Replay() ended")
+
+	st := rxtx.rx
 
 	var delta int64
 	var randSSRC uint32 = uint32(mrand.Int63())
 
 	var first *XPacket = nil
 
-	for xp, i, ok := st.Get(0); ok; xp, i, ok = st.Get(i) {
+	for xp, ix, ok := st.Get(lastKf); ok; xp, ix, ok = st.Get(ix) {
 		if !ok {
 			return
 		}
@@ -2141,8 +2233,8 @@ func Replay(st *disrupt.Disrupt[*XPacket], t *TxTracks, txt *TxTrack) {
 			if delta < 0 {
 				panic("bug")
 			}
-			if !xp.Keyframe {
-				pl("Replay() didnt start with KF, returning")
+			if isvid && !xp.Keyframe {
+				dbg.Switching.Println("Replay() didnt start with KF, returning")
 				return
 			}
 		}
@@ -2164,57 +2256,18 @@ func Replay(st *disrupt.Disrupt[*XPacket], t *TxTracks, txt *TxTrack) {
 		// when we switch to 'live'
 		// (this would cause a big jump in the timestamps to the splicer)
 
-		t.mu.Lock()
-		if _, ok := t.replay[txt]; !ok {
+		rxtx.tx.mu.Lock()
+		if _, ok := rxtx.tx.replay[txt]; !ok {
 			//finish when tracks have been switched away
-			t.mu.Unlock()
+			rxtx.tx.mu.Unlock()
 			return
 		}
 
 		txt.splicer.SpliceWriteRTP(txt.track, &copy, now, int64(txt.clockrate))
 
-		t.mu.Unlock()
+		rxtx.tx.mu.Unlock()
 
 	}
-}
-
-func SubscriberGr(subGrCh <-chan string, txt *TxTrack, roomname string) {
-	dbg.Goroutine.Println(unsafe.Pointer(&subGrCh), "subGr() started")
-	defer dbg.Goroutine.Println(unsafe.Pointer(&subGrCh), "subGr() ended")
-
-	room := rooms.GetRoom(roomname)
-
-	for {
-		room.SubscriberIncRef()
-		room.audTracks.add(txt)
-
-		xpCh := room.xBroker.SubscribeReplay()
-		brkr := room.xBroker   //fix race
-		trks := room.audTracks //fix race
-		go func() {            // start Replay()
-			Replay(nil, trks, txt)
-			brkr.RemoveClose(xpCh) // 2 calls is okay: here & after switch request
-		}()
-
-		req, open := <-subGrCh
-
-		room.SubscriberDecRef()
-		room.xBroker.RemoveClose(xpCh) // 2 calls is okay: here & after switch request
-		room.audTracks.remove(txt)     // remove from current room
-
-		if !open {
-			return
-		}
-
-		// copy and change the address of txt. cause Replay() return. see note after function
-		tmptxt := *txt
-		txt = &tmptxt
-
-		room = rooms.GetRoom(req)
-		dbg.Rooms.Println(unsafe.Pointer(&subGrCh), "SubscriberGr() switched to different room:", req)
-
-	}
-
 }
 
 //Important note:
@@ -2340,15 +2393,16 @@ func getRoomListHandler(rw http.ResponseWriter, r *http.Request) {
 
 }
 
-func Writer(room *Room, st *disrupt.Disrupt[*XPacket], t *TxTracks) {
+func Writer(isvid bool, rxtx *rxTxType, audTx *TxTracks) {
 	dbg.Writer.Println("Writer() started")
 	defer dbg.Writer.Println("Writer() ended")
 
 	var rtpPktCopy rtp.Packet
 
-	gotkf := false
+	rx := rxtx.rx
+	tx := rxtx.tx
 
-	for xp, i, ok := st.Get(0); ok; xp, i, ok = st.Get(i) {
+	for xp, i, ok := rx.GetLast(); ok; xp, i, ok = rx.Get(i) {
 		if !ok {
 			return
 		}
@@ -2357,22 +2411,21 @@ func Writer(room *Room, st *disrupt.Disrupt[*XPacket], t *TxTracks) {
 		now := nanotime()
 
 		// if keyframe, move all from pending to live
-		if !gotkf && xp.Typ == Video && xp.Keyframe {
-			gotkf = true
+		if isvid && xp.Keyframe && audTx != nil {
 
-			t.onKeyframe()
-			room.audTracks.onKeyframe()
+			dbg.Switching.Println(unsafe.Pointer(rxtx),"### switching aud,vid to LIVE!",i,xp.Arrival)
+
+			tx.moveFromPendToLive()
+			audTx.moveFromPendToLive()
 
 		}
-
-		t.onKeyframe()
 
 		//pl(5,len(t.live),len(t.replay))
 
 		// we don't call a method here, so
 		// we can use the rtpPktCopy, which someday won't escape, maybe
-		t.mu.Lock()
-		for k := range t.live {
+		tx.mu.Lock()
+		for k := range tx.live {
 
 			rtpPktCopy = xp.Pkt
 			//this is a candidate for heavy optimzation
@@ -2381,7 +2434,7 @@ func Writer(room *Room, st *disrupt.Disrupt[*XPacket], t *TxTracks) {
 			// this is currently at 20ns/loop
 			k.splicer.SpliceWriteRTP(k.track, &rtpPktCopy, now, int64(k.clockrate))
 		}
-		t.mu.Unlock()
+		tx.mu.Unlock()
 
 	}
 }
@@ -2400,7 +2453,7 @@ func NewTxTracks() *TxTracks {
 	return a
 }
 
-func (t *TxTracks) onKeyframe() {
+func (t *TxTracks) moveFromPendToLive() {
 	t.mu.Lock()
 
 	for txt := range t.replay {

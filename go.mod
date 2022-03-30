@@ -4,7 +4,6 @@ go 1.18
 
 require (
 	github.com/caddyserver/certmagic v0.14.6-0.20210923203551-1bbe11e2914b
-	github.com/google/uuid v1.3.0
 	github.com/libdns/cloudflare v0.1.0
 	github.com/libdns/duckdns v0.1.1
 	github.com/libdns/libdns v0.2.1
@@ -24,6 +23,7 @@ require (
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/google/uuid v1.3.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.0.6 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/mholt/acmez v1.0.0 // indirect
