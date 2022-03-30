@@ -123,7 +123,6 @@ func newRxTxType() *rxTxType {
 // this struct, is currently IMMUTABLE, ideally, it stays that way
 type Room struct {
 	mu          sync.Mutex
-	writerChan  chan *XPacket
 	doneClose   chan struct{}
 	subCount    int
 	roomname    string
@@ -809,8 +808,7 @@ func roomFinalizer(room *Room) {
 	// XXX race concern? check with detector
 	room.weakRef = nil
 
-	close(room.doneClose)  //fast async
-	close(room.writerChan) //fast async
+	close(room.doneClose) //fast async
 
 	//NONONO
 	// we require the idleGenerator to close the broker input
@@ -822,14 +820,8 @@ func roomFinalizer(room *Room) {
 
 func NewRoom(roomname string) *Room {
 
-	xbroker := NewXBroker()
-
-	go xbroker.Start()
-
-	writerInCh := xbroker.Subscribe()
 	room := &Room{
 		mu:          sync.Mutex{},
-		writerChan:  writerInCh,
 		doneClose:   make(chan struct{}),
 		subCount:    0,
 		roomname:    roomname,
