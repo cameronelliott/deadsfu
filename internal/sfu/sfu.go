@@ -1418,30 +1418,7 @@ func OnTrack2(
 	dbg.Main.Println("OnTrack MediaStream.id [msid ident]:", track.StreamID())
 	dbg.Main.Println("OnTrack MediaStreamTrack.id [msid appdata]:", track.ID())
 
-	go func() { // pli sender
-		var err error
-
-		for {
-			err = sendPLI(peerConnection, track)
-			if err == io.ErrClosedPipe {
-				return
-			} else if err != nil {
-				errlog.Println(err.Error())
-				return
-			}
-
-			// err = sendREMB(peerConnection, track)
-			// if err == io.ErrClosedPipe {
-			// 	return
-			// } else if err != nil {
-			// 	errlog.Println(err.Error())
-			// 	return
-			// }
-
-			time.Sleep(3 * time.Second)
-		}
-	}()
-
+	go pliSender(peerConnection, track)
 	// if *logPackets {
 	// 	logPacketNewSSRCValue(logPacketIn, track.SSRC(), rtpsource)
 	// }
@@ -1454,6 +1431,30 @@ func OnTrack2(
 	//here on error
 	dbg.Main.Printf("video reader %p exited", track)
 
+}
+
+func pliSender(pc *webrtc.PeerConnection, track *webrtc.TrackRemote) { // pli sender
+
+	for {
+
+		err := pc.WriteRTCP([]rtcp.Packet{&rtcp.PictureLossIndication{MediaSSRC: uint32(track.SSRC())}})
+		if err == io.ErrClosedPipe {
+			return
+		} else if err != nil {
+			errlog.Println(err.Error())
+			return
+		}
+
+		// err = sendREMB(peerConnection, track)
+		// if err == io.ErrClosedPipe {
+		// 	return
+		// } else if err != nil {
+		// 	errlog.Println(err.Error())
+		// 	return
+		// }
+
+		time.Sleep(3 * time.Second)
+	}
 }
 
 // var xpacketPool = sync.Pool{
