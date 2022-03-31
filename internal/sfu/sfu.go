@@ -122,14 +122,14 @@ func newRxTxType() *rxTxType {
 // mostly the channel on which a /pub puts media for a /sub to send out
 // this struct, is currently IMMUTABLE, ideally, it stays that way
 type Room struct {
-	mu          sync.Mutex
-	doneClose   chan struct{}
-	subCount    int
-	roomname    string
-	ingressBusy bool
-	weakRef     *roomIndirect // gets nulled on finalizer
-	aud         *rxTxType
-	vid         *rxTxType
+	mu        sync.Mutex
+	doneClose chan struct{}
+	subCount  int
+	roomname  string
+	pubLock   bool
+	weakRef   *roomIndirect // gets nulled on finalizer
+	aud       *rxTxType
+	vid       *rxTxType
 }
 
 type roomIndirect struct {
@@ -194,7 +194,7 @@ func (r *Room) IsEmpty() bool {
 	defer r.mu.Unlock()
 
 	//roomEmpty := !r.ingressBusy && r.tracks.IsEmpty()
-	roomEmpty := !r.ingressBusy && r.subCount == 0
+	roomEmpty := !r.pubLock && r.subCount == 0
 
 	return roomEmpty
 }
@@ -203,7 +203,7 @@ func (r *Room) String() string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	return fmt.Sprintf("room:%v now has a publisher:%v and subcount:%v", r.roomname, r.ingressBusy, r.subCount)
+	return fmt.Sprintf("room:%v now has a publisher:%v and subcount:%v", r.roomname, r.pubLock, r.subCount)
 }
 
 type MsgGetSourcesList struct {
@@ -821,14 +821,14 @@ func roomFinalizer(room *Room) {
 func NewRoom(roomname string) *Room {
 
 	room := &Room{
-		mu:          sync.Mutex{},
-		doneClose:   make(chan struct{}),
-		subCount:    0,
-		roomname:    roomname,
-		ingressBusy: false,
-		weakRef:     &roomIndirect{},
-		aud:         newRxTxType(),
-		vid:         newRxTxType(),
+		mu:        sync.Mutex{},
+		doneClose: make(chan struct{}),
+		subCount:  0,
+		roomname:  roomname,
+		pubLock:   false,
+		weakRef:   &roomIndirect{},
+		aud:       newRxTxType(),
+		vid:       newRxTxType(),
 	}
 	room.weakRef = &roomIndirect{room}
 	runtime.SetFinalizer(room, roomFinalizer)
