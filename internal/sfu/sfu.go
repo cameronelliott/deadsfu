@@ -113,7 +113,7 @@ func newRxTxType() *rxTxType {
 	return &rxTxType{
 		rx:     disrupt.NewDisrupt[*XPacket](16384),
 		tx:     NewTxTracks(),
-		lastKf: 0,
+		lastKf: -1,
 	}
 
 }
@@ -1470,7 +1470,12 @@ func pliSender(pc *webrtc.PeerConnection, track *webrtc.TrackRemote) { // pli se
 func inboundTrackReader(isvid bool, rxTrack *webrtc.TrackRemote, clockrate uint32, typ XPacketType, rxtx *rxTxType, audTx *TxTracks, room *Room) {
 
 	//defer runtime.KeepAlive(room) // backup keepalive
-	defer rxtx.rx.Close()
+	// XXX think about (Replay,Writer) and how they get freed/released!
+	// NO, with chans/xbroker, we don't close the virtual streams between publishers
+	//defer rxtx.rx.Close()
+	// we do reset the kf pointers
+	defer atomic.StoreInt64(&room.vid.lastKf, -1)
+	defer atomic.StoreInt64(&room.aud.lastKf, -1)
 
 	go Writer(isvid, rxtx, audTx, room.roomname)
 
@@ -2232,6 +2237,10 @@ func Replay(isvid bool, rxtx *rxTxType, txt *TxTrack) {
 
 	dbg.Switching.Printf("Replay() started  lastkf = %v", lastKf)
 	defer dbg.Switching.Printf("Replay() ended")
+
+	if lastKf == -1 { //sentinel value indicates
+		return
+	}
 
 	st := rxtx.rx
 
