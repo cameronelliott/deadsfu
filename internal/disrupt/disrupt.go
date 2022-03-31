@@ -58,6 +58,9 @@ func (d *Disrupt[T]) LastIx() int64 {
 
 func (d *Disrupt[T]) Close() {
 
+	// println("Close called on disrupt", unsafe.Pointer(d))
+	// debug.PrintStack()
+
 	i := atomic.LoadInt64(&d.next)
 	if i < 0 {
 		log.Fatal("cannot close twice")
@@ -87,6 +90,10 @@ func (d *Disrupt[T]) Put(v T) (index int64) {
 	ix := index & d.mask64
 
 	if index < 0 {
+		// println("Put on closed disrupt", unsafe.Pointer(d))
+		// debug.PrintStack()
+		// we now nolonger close the disruptor, to avoid this, on 2nd
+		// pub connect to rooms
 		log.Fatal("closed")
 	}
 
@@ -113,8 +120,8 @@ func (d *Disrupt[T]) Put(v T) (index int64) {
 
 func (d *Disrupt[T]) GetLast() (value T, next int64, more bool) {
 
-	i:= d.LastIx()
-	
+	i := d.LastIx()
+
 	return d.Get(i)
 
 }
