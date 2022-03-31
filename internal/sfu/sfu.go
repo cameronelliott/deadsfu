@@ -152,31 +152,31 @@ func (r *Room) PublisherTryLock() (ok bool) {
 	return true
 }
 
-func (r *Room) SubscriberIncRef() {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.subCount == 0 {
-		select {
-		case roomSetChangedCh <- struct{}{}:
-		default:
-		}
-	}
-	r.subCount++
-}
+// func (r *Room) subscriberIncRef() {
+// 	r.mu.Lock()
+// 	defer r.mu.Unlock()
+// 	if r.subCount == 0 {
+// 		select {
+// 		case roomSetChangedCh <- struct{}{}:
+// 		default:
+// 		}
+// 	}
+// 	r.subCount++
+// }
 
-func (r *Room) SubscriberDecRef() {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.subCount--
-	if r.subCount == 0 {
-		if r.subCount == 0 {
-			select {
-			case roomSetChangedCh <- struct{}{}:
-			default:
-			}
-		}
-	}
-}
+// func (r *Room) subscriberDecRef() {
+// 	r.mu.Lock()
+// 	defer r.mu.Unlock()
+// 	r.subCount--
+// 	if r.subCount == 0 {
+// 		if r.subCount == 0 {
+// 			select {
+// 			case roomSetChangedCh <- struct{}{}:
+// 			default:
+// 			}
+// 		}
+// 	}
+// }
 
 // PublisherUnlock this will shutdown room if it has no pubs, no subs
 func (r *Room) PublisherUnlock() {
