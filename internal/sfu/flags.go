@@ -29,6 +29,8 @@ var dialUpstreamUrlFlag = pflag.StringP("dial-upstream", "d", "", "Specify a URL
 var iceCandidateHost = pflag.String("ice-candidate-host", "", "For forcing the ice host candidate IP address")
 var iceCandidateSrflx = pflag.String("ice-candidate-srflx", "", "For forcing the ice srflx candidate IP address")
 
+var enableTwcc = pflag.Bool("twcc",true,"Enable TWCC Transport Wide Congestion Control")
+
 var ftlKey = pflag.String("ftl-key", "", "Set the ftl/obs Settings/Stream/Stream-key. LIKE A PASSWORD! CHANGE THIS FROM DEFAULT! ")
 var ftlUdpPort = pflag.Int("ftl-udp-port", 8084, "The UDP port to use for FTL UDP rx. Zero is valid. Zero for ephemeral port num")
 

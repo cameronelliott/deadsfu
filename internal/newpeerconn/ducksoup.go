@@ -85,7 +85,7 @@ var H264Codecs = []webrtc.RTPCodecParameters{
 	},
 }
 
-func NewWebRTCAPI() (*webrtc.API, error) {
+func NewWebRTCAPI(enableTwcc bool) (*webrtc.API, error) {
 	s := webrtc.SettingEngine{}
 	//s.SetSRTPReplayProtectionWindow(512)
 	//s.SetICEMulticastDNSMode(ice.MulticastDNSModeDisabled)
@@ -112,7 +112,7 @@ func NewWebRTCAPI() (*webrtc.API, error) {
 
 	i := &interceptor.Registry{}
 
-	if err := registerInterceptors(m, i); err != nil {
+	if err := registerInterceptors(enableTwcc, m, i); err != nil {
 		return nil, err
 	}
 
@@ -124,7 +124,7 @@ func NewWebRTCAPI() (*webrtc.API, error) {
 }
 
 // adapted from https://github.com/pion/webrtc/blob/v3.1.2/interceptor.go
-func registerInterceptors(mediaEngine *webrtc.MediaEngine, interceptorRegistry *interceptor.Registry) error {
+func registerInterceptors(enableTwcc bool, mediaEngine *webrtc.MediaEngine, interceptorRegistry *interceptor.Registry) error {
 	if err := configureNack(mediaEngine, interceptorRegistry); err != nil {
 		return err
 	}
@@ -133,7 +133,7 @@ func registerInterceptors(mediaEngine *webrtc.MediaEngine, interceptorRegistry *
 		return err
 	}
 
-	if true {
+	if enableTwcc {
 		if err := configureTWCCHeaderExtension(mediaEngine, interceptorRegistry); err != nil {
 			return err
 		}

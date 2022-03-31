@@ -654,7 +654,7 @@ func newPeerConnection() (*webrtc.PeerConnection, error) {
 	//webrtc.WithInterceptorRegistry(i))
 	//rtcapi := webrtc.NewAPI(webrtc.WithMediaEngine(me), webrtc.WithSettingEngine(se), webrtc.WithInterceptorRegistry(i))
 
-	rtcapi, err := newpeerconn.NewWebRTCAPI()
+	rtcapi, err := newpeerconn.NewWebRTCAPI(*enableTwcc)
 	if err != nil {
 		return nil, err
 	}
