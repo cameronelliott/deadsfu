@@ -178,15 +178,15 @@ func (r *Room) PublisherTryLock() (ok bool) {
 // 	}
 // }
 
-// PublisherUnlock this will shutdown room if it has no pubs, no subs
+// PublisherUnlock this clears the pub lock
+// This IGNORES the case where it didn't get locked.
 func (r *Room) PublisherUnlock() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	dbg.Rooms.Printf("PublisherUnlock() room:%s is now unlocked", r.roomname)
 
-	r.ingressBusy = false
-	//r.lastInUse = time.Now()
+	r.pubLock = false
 }
 
 func (r *Room) IsEmpty() bool {
