@@ -839,7 +839,9 @@ func NewRoom(roomname string) *Room {
 	room.weakRef = &roomIndirect{room}
 	runtime.SetFinalizer(room, roomFinalizer)
 
-	//go idleGeneratorGr(room.doneClose, idleMediaPackets, xbroker.inCh)
+	go Writer(true, room.vid, room.aud.tx, room.roomname)
+	go Writer(false, room.aud, nil, room.roomname)
+	go room.aud.rx.SentinelMaker()
 
 	return room
 }
@@ -1484,8 +1486,6 @@ func inboundTrackReader(isvid bool, rxTrack *webrtc.TrackRemote, clockrate uint3
 	// dont do this here, do it in publock
 	// defer atomic.StoreInt64(&room.vid.lastKf, -1)
 	// defer atomic.StoreInt64(&room.aud.lastKf, -1)
-
-	go Writer(isvid, rxtx, audTx, room.roomname)
 
 	rx := rxtx.rx
 
