@@ -141,15 +141,21 @@ func (r *Room) PublisherTryLock() (ok bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if r.ingressBusy {
-		dbg.Rooms.Printf("PublisherTryLock() room:%s already busy", r.roomname)
-		return false // room ingres is busy!
+	ok = !r.pubLock
+
+	dbg.Rooms.Printf("PublisherTryLock() room:%s lock granted:%v", r.roomname, ok)
+
+	if ok {
+		r.pubLock = true
+
+		atomic.StoreInt64(&r.vid.lastKf, -1)
+		atomic.StoreInt64(&r.aud.lastKf, -1)
+
+		// r.aud = newRxTxType()
+		// r.vid = newRxTxType()
 	}
-	r.ingressBusy = true
 
-	dbg.Rooms.Printf("PublisherTryLock() room:%s lock grantee", r.roomname)
-
-	return true
+	return
 }
 
 // func (r *Room) subscriberIncRef() {
@@ -1470,12 +1476,14 @@ func pliSender(pc *webrtc.PeerConnection, track *webrtc.TrackRemote) { // pli se
 func inboundTrackReader(isvid bool, rxTrack *webrtc.TrackRemote, clockrate uint32, typ XPacketType, rxtx *rxTxType, audTx *TxTracks, room *Room) {
 
 	//defer runtime.KeepAlive(room) // backup keepalive
+
 	// XXX think about (Replay,Writer) and how they get freed/released!
 	// NO, with chans/xbroker, we don't close the virtual streams between publishers
 	//defer rxtx.rx.Close()
 	// we do reset the kf pointers
-	defer atomic.StoreInt64(&room.vid.lastKf, -1)
-	defer atomic.StoreInt64(&room.aud.lastKf, -1)
+	// dont do this here, do it in publock
+	// defer atomic.StoreInt64(&room.vid.lastKf, -1)
+	// defer atomic.StoreInt64(&room.aud.lastKf, -1)
 
 	go Writer(isvid, rxtx, audTx, room.roomname)
 
