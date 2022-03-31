@@ -2255,18 +2255,28 @@ func Replay(isvid bool, rxtx *rxTxType, txt *TxTrack) {
 	var delta int64
 	var randSSRC uint32 = uint32(mrand.Int63())
 
-	var first *XPacket = nil
+	first := true
 
-	for xp, ix, ok := st.Get(lastKf); ok; xp, ix, ok = st.Get(ix) {
+	for xp, ix, ok := st.Get(lastKf, true); ok; xp, ix, ok = st.Get(ix, true) {
 		if !ok {
 			return
+		}
+		if xp == periodicSentinel {
+			dbg.Switching.Println("got sentinel")
+			rxtx.tx.mu.Lock()
+			_, ok := rxtx.tx.replay[txt]
+			rxtx.tx.mu.Unlock()
+			if !ok {
+				dbg.Switching.Println("returning due to sentinel")
+				return
+			}
 		}
 
 		now := nanotime()
 
-		if first == nil {
-			first = xp
-			delta = now - first.Arrival
+		if first {
+			first = false
+			delta = now - xp.Arrival
 			if delta < 0 {
 				errlog.Println("negative delta")
 				delta = 0
