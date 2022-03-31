@@ -1715,7 +1715,7 @@ func pubHandlerCreatePeerconn(offersdp string, roomname string) (*webrtc.Session
 		case webrtc.PeerConnectionStateFailed:
 			fallthrough
 		case webrtc.PeerConnectionStateDisconnected:
-			defer room.PublisherUnlock()
+			room.PublisherUnlock()
 			pc.Close() // Sean, must close to release resources. important
 		}
 	})
