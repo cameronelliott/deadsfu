@@ -108,10 +108,12 @@ type rxTxType struct {
 	lastKf int64
 }
 
+var periodicSentinel *XPacket = &XPacket{}
+
 func newRxTxType() *rxTxType {
 
 	return &rxTxType{
-		rx:     disrupt.NewDisrupt[*XPacket](16384),
+		rx:     disrupt.NewDisrupt(16384, periodicSentinel),
 		tx:     NewTxTracks(),
 		lastKf: -1,
 	}
@@ -122,14 +124,13 @@ func newRxTxType() *rxTxType {
 // mostly the channel on which a /pub puts media for a /sub to send out
 // this struct, is currently IMMUTABLE, ideally, it stays that way
 type Room struct {
-	mu        sync.Mutex
-	doneClose chan struct{}
-	subCount  int
-	roomname  string
-	pubLock   bool
-	weakRef   *roomIndirect // gets nulled on finalizer
-	aud       *rxTxType
-	vid       *rxTxType
+	mu       sync.Mutex
+	subCount int
+	roomname string
+	pubLock  bool
+	weakRef  *roomIndirect // gets nulled on finalizer
+	aud      *rxTxType
+	vid      *rxTxType
 }
 
 type roomIndirect struct {
@@ -827,14 +828,13 @@ func roomFinalizer(room *Room) {
 func NewRoom(roomname string) *Room {
 
 	room := &Room{
-		mu:        sync.Mutex{},
-		doneClose: make(chan struct{}),
-		subCount:  0,
-		roomname:  roomname,
-		pubLock:   false,
-		weakRef:   &roomIndirect{},
-		aud:       newRxTxType(),
-		vid:       newRxTxType(),
+		mu:       sync.Mutex{},
+		subCount: 0,
+		roomname: roomname,
+		pubLock:  false,
+		weakRef:  &roomIndirect{},
+		aud:      newRxTxType(),
+		vid:      newRxTxType(),
 	}
 	room.weakRef = &roomIndirect{room}
 	runtime.SetFinalizer(room, roomFinalizer)
@@ -842,6 +842,7 @@ func NewRoom(roomname string) *Room {
 	go Writer(true, room.vid, room.aud.tx, room.roomname)
 	go Writer(false, room.aud, nil, room.roomname)
 	go room.aud.rx.SentinelMaker()
+	go room.vid.rx.SentinelMaker()
 
 	return room
 }
@@ -2453,7 +2454,7 @@ func Writer(isvid bool, rxtx *rxTxType, audTx *TxTracks, name string) {
 	rx := rxtx.rx
 	tx := rxtx.tx
 
-	for xp, i, ok := rx.GetLast(); ok; xp, i, ok = rx.Get(i) {
+	for xp, i, ok := rx.GetLast(); ok; xp, i, ok = rx.Get(i, false) {
 		if !ok {
 			return
 		}
