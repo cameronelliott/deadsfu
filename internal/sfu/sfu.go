@@ -7,7 +7,9 @@ import (
 	"bytes"
 	"context"
 	crand "crypto/rand"
+	"os/signal"
 	"sync/atomic"
+	"syscall"
 
 	"encoding/json"
 	"math"
@@ -370,6 +372,14 @@ func Main() {
 	oneTimeFlagsActions() //if !strings.HasSuffix(os.Args[0], ".test") {
 
 	verifyEmbedFiles()
+	gcch := make(chan os.Signal, 1)
+	go func() {
+		for range gcch {
+			println("GC triggered")
+			runtime.GC()
+		}
+	}()
+	signal.Notify(gcch, syscall.SIGUSR1)
 
 	go RoomListRequestHandler()
 	if dbg.Numgoroutine.enabled {
