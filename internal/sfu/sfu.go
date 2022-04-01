@@ -821,20 +821,6 @@ func (rm *RoomMap) GetRoom(roomname string) *Room {
 	return link
 }
 
-func roomFinalizer(room *Room) {
-	// XXX race concern? check with detector
-	room.weakRef = nil
-
-	close(room.doneClose) //fast async
-
-	//NONONO
-	// we require the idleGenerator to close the broker input
-	//room.xBroker.Stop()
-
-	// unneeded, race causing
-	// r.tracks = nil
-}
-
 func NewRoom(roomname string) *Room {
 
 	room := &Room{
@@ -855,6 +841,14 @@ func NewRoom(roomname string) *Room {
 	go room.vid.rx.SentinelMaker()
 
 	return room
+}
+
+func roomFinalizer(room *Room) {
+
+	room.weakRef = nil
+	room.aud.rx.Close()
+	room.vid.rx.Close()
+
 }
 
 func handlePreflight(req *http.Request, w http.ResponseWriter) bool {
@@ -1818,6 +1812,12 @@ func (s *subscriber) switchRoom(newroom *Room) {
 	s.room.aud.tx.remove(s.aud) //locks txtrack
 	s.room.vid.tx.remove(s.vid) //locks txtrack
 
+	// XXX giving a new address to s.aud, s.vid
+	// will 99% of the time cause Replay to shutdown
+	// but there might be a 1% the same addresses from
+	// a prior cycle get re-assigned.
+	// think about that
+
 	if newroom == s.room {
 		//give the tracks new addresses, so any Replays know to finish up
 		xaud := *s.aud
@@ -2315,9 +2315,9 @@ func Replay(isvid bool, rxtx *rxTxType, txt *TxTrack) {
 		// when we switch to 'live'
 		// (this would cause a big jump in the timestamps to the splicer)
 
+		//finish when tracks have been switched away
 		rxtx.tx.mu.Lock()
 		if _, ok := rxtx.tx.replay[txt]; !ok {
-			//finish when tracks have been switched away
 			rxtx.tx.mu.Unlock()
 			return
 		}
