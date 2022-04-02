@@ -4,7 +4,6 @@ import (
 	"log"
 	"sync"
 	"sync/atomic"
-	"time"
 	"unsafe"
 )
 
@@ -16,21 +15,19 @@ func (*nolock) Unlock() {}
 //don't use const for CacheLine size, it hits a linter bug
 // SPMC
 type Disrupt[T any] struct {
-	next     int64
-	_        [64]byte
-	len64    int64
-	_        [64]byte
-	mask64   int64
-	_        [64]byte
-	cond     sync.Cond
-	_        [64]byte
-	buf      []T
-	_        [64]byte
-	sentinal T
-	_        [64]byte
+	next   int64
+	_2     [64]byte
+	len64  int64
+	_3     [64]byte
+	mask64 int64
+	_4     [64]byte
+	cond   sync.Cond
+	_5     [64]byte
+	buf    []T
+	_1     [64]byte
 }
 
-func NewDisrupt[T any](n int64, sentinel T) *Disrupt[T] {
+func NewDisrupt[T any](n int64) *Disrupt[T] {
 
 	if n <= 0 || (n&(n-1)) != 0 {
 		log.Fatal("require  power of two")
@@ -39,11 +36,10 @@ func NewDisrupt[T any](n int64, sentinel T) *Disrupt[T] {
 	buf := make([]T, n)
 
 	return &Disrupt[T]{
-		cond:     sync.Cond{L: &nolock{}},
-		buf:      buf,
-		len64:    int64(n),
-		mask64:   int64(n - 1),
-		sentinal: sentinel,
+		cond:   sync.Cond{L: &nolock{}},
+		buf:    buf,
+		len64:  int64(n),
+		mask64: int64(n - 1),
 	}
 }
 
@@ -126,11 +122,11 @@ func (d *Disrupt[T]) GetLast() (value T, next int64, more bool) {
 
 	i := d.LastIx()
 
-	return d.Get(i, false)
+	return d.Get(i)
 
 }
 
-func (d *Disrupt[T]) Get(k int64, wantSentinels bool) (value T, next int64, more bool) {
+func (d *Disrupt[T]) Get(k int64) (value T, next int64, more bool) {
 
 	//ix := k % d.len64
 
@@ -142,20 +138,17 @@ again:
 	// 	log.Fatal("invalid index too high")
 	// }
 
-	for j, lastj := atomic.LoadInt64(&d.next), int64(-1); k >= j; j = atomic.LoadInt64(&d.next) {
+	for j := atomic.LoadInt64(&d.next); k >= j; j = atomic.LoadInt64(&d.next) {
 		if j < 0 { //closed?
 			if k >= -j { // no values left
 				var zeroval T
 				return zeroval, k, false
 			}
 			break
-		} else if wantSentinels && lastj == j {
-			return d.sentinal, k, true
 		} else {
 			d.cond.Wait()
 			//d.cond.Signal() // wake any other waiters, when not using broadcast in Put
 		}
-		lastj = j
 	}
 
 	if RaceEnabled {
@@ -179,8 +172,7 @@ again:
 	}
 	if k <= (j - d.len64) { // we read possibly overwritten data
 
-		//k++                              //discard bad data
-		k = j
+		k++                              //discard bad data
 		log.Println("disrupt data loss") // XXX better way to track someday
 		goto again
 
@@ -192,16 +184,4 @@ again:
 
 	return val, k, true
 
-}
-
-func (d *Disrupt[T]) SentinelMaker() {
-
-	for {
-		time.Sleep(time.Second)
-		d.cond.Broadcast()
-		j := atomic.LoadInt64(&d.next)
-		if j < 0 { //closed ??
-			return
-		}
-	}
 }

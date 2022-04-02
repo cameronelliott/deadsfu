@@ -70,7 +70,7 @@ func benchmarkDisrupt(b *testing.B, bufsize int64) {
 
 	w.Add(1)
 
-	a := NewDisrupt[int64](bufsize, -5)
+	a := NewDisrupt[int64](bufsize)
 
 	go func() {
 
@@ -94,7 +94,7 @@ func benchmarkDisrupt(b *testing.B, bufsize int64) {
 
 	//runtime.LockOSThread()
 	for ix := int64(0); ix < int64(b.N); ix++ {
-		val, nextix, isopen := a.Get(ix, false)
+		val, nextix, isopen := a.Get(ix)
 		if ix != val || ix+1 != nextix || isopen != true {
 			require.Equal(b, ix, val)
 			require.Equal(b, ix+1, nextix)
@@ -114,7 +114,7 @@ func benchmarkDisrupt(b *testing.B, bufsize int64) {
 	b.StopTimer()
 
 	var zero int64
-	v, ix, isopen := a.Get(int64(b.N), false)
+	v, ix, isopen := a.Get(int64(b.N))
 	require.Equal(b, zero, v)
 	require.Equal(b, int64(b.N), ix)
 	require.Equal(b, false, isopen)
@@ -131,7 +131,7 @@ func testDisrupt(t *testing.T, bufsize int64, NN int64) {
 
 	w.Add(1)
 
-	a := NewDisrupt[int64](bufsize, -5)
+	a := NewDisrupt[int64](bufsize)
 
 	go func() {
 
@@ -149,7 +149,7 @@ func testDisrupt(t *testing.T, bufsize int64, NN int64) {
 
 	//runtime.LockOSThread()
 	for ix := int64(0); ix < int64(NN); ix++ {
-		val, nextix, isopen := a.Get(ix, false)
+		val, nextix, isopen := a.Get(ix)
 		if ix != val || ix+1 != nextix || isopen != true {
 			require.Equal(t, ix, val)
 			require.Equal(t, ix+1, nextix)
@@ -160,7 +160,7 @@ func testDisrupt(t *testing.T, bufsize int64, NN int64) {
 	w.Wait()
 
 	var zero int64
-	v, ix, isopen := a.Get(int64(NN), false)
+	v, ix, isopen := a.Get(int64(NN))
 	require.Equal(t, zero, v)
 	require.Equal(t, int64(NN), ix)
 	require.Equal(t, false, isopen)
@@ -181,15 +181,15 @@ func TestPutGet1(t *testing.T) {
 	w := sync.WaitGroup{}
 
 	w.Add(1)
-	a := NewDisrupt[int64](256, -5)
+	a := NewDisrupt[int](256)
 
 	go func() {
 
 		t0 := time.Now()
 
-		v, i, ok := a.Get(0, false)
+		v, i, ok := a.Get(0)
 
-		assert.Equal(t, int64(99), v)
+		assert.Equal(t, 99, v)
 		assert.Equal(t, int64(1), i)
 		assert.Equal(t, true, ok)
 		dur := time.Since(t0)
